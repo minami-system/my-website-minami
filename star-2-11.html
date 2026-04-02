@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Meteor System</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000108; font-family: 'Hiragino Mincho ProN', serif; }
+        canvas { display: block; }
+
+        .meteor-msg {
+            position: fixed;
+            color: #dff6ff;
+            font-size: 1.2rem;
+            font-weight: 600;
+            letter-spacing: 0.25em;
+            text-shadow: 0 0 12px #000, 0 0 25px rgba(120,180,255,0.9);
+            pointer-events: none;
+            opacity: 1;
+            z-index: 10;
+            transition: opacity 0.8s ease;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="sky"></canvas>
+
+<script>
+const canvas = document.getElementById('sky');
+const ctx = canvas.getContext('2d');
+
+let stars = [], meteors = [];
+let starCount = 160;
+
+// ★ あなたが自由に編集できる文言リスト
+const messages = [
+    "星のささやき",
+    "夜空の記憶",
+    "永遠の煌めき",
+    "静寂の深淵",
+    "光の残響",
+    "夢の残滓",
+    "銀河の呼吸",
+    "影のゆらめき",
+    "深海のような空",
+    "時の雫",
+];
+
+class Star {
+    constructor() { this.reset(); }
+    reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.size = Math.random() * 2 + 0.5;
+        this.opacity = Math.random() * 0.8 + 0.2;
+    }
+}
+
+// ★ 流れ星ごとに文言用の div を作成
+function createMessageElement(text) {
+    const el = document.createElement("div");
+    el.className = "meteor-msg";
+    el.innerText = text;
+    document.body.appendChild(el);
+    return el;
+}
+
+function spawnMeteor() {
+    const msg = messages[Math.floor(Math.random() * messages.length)];
+    const msgEl = createMessageElement(msg);
+
+    meteors.push({
+        active: true,
+        x: -150,
+        y: Math.random() * canvas.height * 0.7,
+        speed: Math.random() * 1.2 + 0.8,
+        len: Math.random() * 250 + 350,
+        color: "#c8f7ff",
+        msgEl: msgEl
+    });
+}
+
+function drawSun() {
+    const x = canvas.width - 150;
+    const y = 120;
+
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 120);
+    g.addColorStop(0, "rgba(255,240,180,0.9)");
+    g.addColorStop(1, "rgba(255,240,180,0)");
+
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, 120, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawMoon() {
+    const x = 150;
+    const y = 150;
+
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 80);
+    g.addColorStop(0, "rgba(200,220,255,0.9)");
+    g.addColorStop(1, "rgba(200,220,255,0)");
+
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, 80, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawEarth() {
+    const x = 180;
+    const y = canvas.height - 180;
+
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 120);
+    g.addColorStop(0, "rgba(80,150,255,0.9)");
+    g.addColorStop(1, "rgba(80,150,255,0)");
+
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, 120, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawBlackHole() {
+    const x = canvas.width * 0.5;
+    const y = canvas.height * 0.55;
+
+    for (let i = 0; i < 40; i++) {
+        const r = 120 - i * 3;
+        ctx.strokeStyle = `rgba(50,50,80,${0.05})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(x, y, 40, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function draw() {
+    ctx.fillStyle = "#000108";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    drawSun();
+    drawMoon();
+    drawEarth();
+    drawBlackHole();
+
+    // 星
+    stars.forEach(s => {
+        s.x += 0.03;
+        if (s.x > canvas.width) s.x = 0;
+
+        ctx.fillStyle = `rgba(255,255,255,${s.opacity})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // 流れ星
+    if (Math.random() < 0.0025) spawnMeteor();
+
+    meteors.forEach(m => {
+        m.x += m.speed;
+        m.y += m.speed * 0.12;
+
+        // 尾のグラデーション
+        const grad = ctx.createLinearGradient(
+            m.x, m.y,
+            m.x - m.len, m.y - m.len * 0.1
+        );
+        grad.addColorStop(0, m.color);
+        grad.addColorStop(1, "rgba(200,247,255,0)");
+
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(m.x, m.y);
+        ctx.lineTo(m.x - m.len, m.y - m.len * 0.1);
+        ctx.stroke();
+
+        // ★ 文言を流れ星の後ろに追従
+        m.msgEl.style.left = (m.x - m.len * 0.45) + "px";
+        m.msgEl.style.top  = (m.y - m.len * 0.12) + "px";
+
+        // ★ 流れ星が完全に消えたら文言も削除
+        if (m.x > canvas.width + 350) {
+            m.active = false;
+            m.msgEl.style.opacity = 0;
+            setTimeout(() => m.msgEl.remove(), 800);
+        }
+    });
+
+    meteors = meteors.filter(m => m.active);
+
+    requestAnimationFrame(draw);
+}
+
+window.addEventListener("resize", () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    stars = Array.from({length: starCount}, () => new Star());
+});
+window.dispatchEvent(new Event("resize"));
+
+draw();
+</script>
+
+</body>
+</html>
