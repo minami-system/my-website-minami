@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Meteor System</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000108; font-family: 'Hiragino Mincho ProN', serif; }
+        canvas { display: block; }
+
+        .meteor-msg {
+            position: fixed;
+            color: #dff6ff;
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: 0.3em;
+            text-shadow: 0 0 12px #000, 0 0 25px rgba(120,180,255,0.9);
+            pointer-events: none;
+            opacity: 1;
+            z-index: 10;
+            transition: opacity 0.8s ease;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="sky"></canvas>
+
+<script>
+const canvas = document.getElementById('sky');
+const ctx = canvas.getContext('2d');
+
+let stars = [], meteors = [], supernovas = [];
+let starCount = 200;
+
+const messages = [
+    "星のささやき","夜空の記憶","永遠の煌めき","静寂の深淵","光の残響",
+    "夢の残滓","銀河の呼吸","影のゆらめき","深海のような空","時の雫",
+];
+
+// ブラックホール位置
+let blackHoleX, blackHoleY;
+
+// ★ 地球と太陽の奥行きアニメーション
+let earthScale = 1.0;
+let earthGrowing = true;
+
+let sunScale = 1.0;
+let sunGrowing = true;
+
+class Star {
+    constructor() { this.reset(); }
+    reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.size = Math.random() * 2 + 0.5;
+        this.opacity = Math.random() * 0.8 + 0.2;
+    }
+}
+
+function createMessageElement(text) {
+    const el = document.createElement("div");
+    el.className = "meteor-msg";
+    el.innerText = text;
+    document.body.appendChild(el);
+    return el;
+}
+
+// ★ 流れ星（右→左）
+function spawnMeteor() {
+    const msg = messages[Math.floor(Math.random() * messages.length)];
+    const msgEl = createMessageElement(msg);
+
+    meteors.push({
+        active: true,
+        x: canvas.width + 150,
+        y: Math.random() * canvas.height * 0.7,
+        speed: Math.random() * 1.2 + 0.8,
+        len: Math.random() * 250 + 350,
+        color: "#c8f7ff",
+        msgEl: msgEl,
+        paused: false
+    });
+}
+
+// ★ 超新星
+function spawnSupernova() {
+    supernovas.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height * 0.7,
+        radius: 0,
+        alpha: 1,
+        power: 1
+    });
+}
+
+// ★ ブラックホール超新星
+function spawnBlackHoleSupernova() {
+    supernovas.push({
+        x: blackHoleX,
+        y: blackHoleY,
+        radius: 0,
+        alpha: 1,
+        power: 2.2
+    });
+}
+
+function drawSupernovas() {
+    supernovas.forEach(s => {
+        s.radius += 3 * s.power;
+        s.alpha -= 0.015 * s.power;
+
+        const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.radius);
+        g.addColorStop(0, `rgba(255,240,200,${s.alpha})`);
+        g.addColorStop(0.4, `rgba(255,150,80,${s.alpha * 0.7})`);
+        g.addColorStop(1, `rgba(80,20,50,0)`);
+
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    supernovas = supernovas.filter(s => s.alpha > 0);
+}
+
+// ★ タップで流れ星停止
+canvas.addEventListener("click", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    meteors.forEach(m => {
+        const x1 = m.x;
+        const y1 = m.y;
+        const x2 = m.x + m.len;
+        const y2 = m.y - m.len * 0.1;
+
+        const dist = pointToLineDistance(clickX, clickY, x1, y1, x2, y2);
+
+        if (dist < 20 && !m.paused) {
+            m.paused = true;
+            m._oldSpeed = m.speed;
+            m.speed = 0;
+
+            setTimeout(() => {
+                if (m.paused) {
+                    m.speed = m._oldSpeed;
+                    m.paused = false;
+                }
+            }, 3000);
+        }
+    });
+});
+
+// ★ 点と線分の距離
+function pointToLineDistance(px, py, x1, y1, x2, y2) {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = dot / lenSq;
+
+    if (param < 0) param = 0;
+    else if (param > 1) param = 1;
+
+    const xx = x1 + param * C;
+    const yy = y1 + param * D;
+
+    const dx = px - xx;
+    const dy = py - yy;
+
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// ★ ブラックホール（見えやすく調整）
+function drawBlackHole() {
+    blackHoleX = canvas.width * 0.5;
+    blackHoleY = canvas.height * 0.55;
+
+    const x = blackHoleX;
+    const y = blackHoleY;
+
+    for (let i = 0; i < 60; i++) {
+        const r = 260 - i * 4;
+        const alpha = 0.03;
+
+        const g = ctx.createRadialGradient(x, y, r * 0.3, x, y, r);
+        g.addColorStop(0, `rgba(90, 70, 160, ${alpha})`);
+        g.addColorStop(1, `rgba(20, 10, 40, 0)`);
+
+        ctx.strokeStyle = g;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    const g2 = ctx.createRadialGradient(x, y, 0, x, y, 110);
+    g2.addColorStop(0, "rgba(0,0,0,1)");
+    g2.addColorStop(1, "rgba(0,0,0,0.6)");
+
+    ctx.fillStyle = g2;
+    ctx.beginPath();
+    ctx.arc(x, y, 110, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(x, y, 80, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// ★ 地球（奥から手前へ迫る）
+function drawEarth() {
+    const baseX = 180;
+    const baseY = canvas.height - 180;
+
+    if (earthGrowing) {
+        earthScale += 0.002;
+        if (earthScale > 1.4) earthGrowing = false;
+    } else {
+        earthScale -= 0.002;
+        if (earthScale < 1.0) earthGrowing = true;
+    }
+
+    const radius = 120 * earthScale;
+
+    const g = ctx.createRadialGradient(baseX, baseY, 0, baseX, baseY, radius);
+    g.addColorStop(0, "rgba(80,150,255,0.9)");
+    g.addColorStop(1, "rgba(80,150,255,0)");
+
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(baseX, baseY, radius, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// ★ 太陽（奥から手前へ迫る）
+function drawSun() {
+    const baseX = canvas.width - 150;
+    const baseY = 120;
+
+    if (sunGrowing) {
+        sunScale += 0.0015;
+        if (sunScale > 1.25) sunGrowing = false;
+    } else {
+        sunScale -= 0.0015;
+        if (sunScale < 1.0) sunGrowing = true;
+    }
+
+    const radius = 120 * sunScale;
+
+    const g = ctx.createRadialGradient(baseX, baseY, 0, baseX, baseY, radius);
+    g.addColorStop(0, "rgba(255,240,180,0.95)");
+    g.addColorStop(1, "rgba(255,240,180,0)");
+
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(baseX, baseY, radius, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawMoon() {
+    const x = 150;
+    const y = 150;
+
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 80);
+    g.addColorStop(0, "rgba(200,220,255,0.9)");
+    g.addColorStop(1, "rgba(200,220,255,0)");
+
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, 80, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function draw() {
+    ctx.fillStyle = "#000108";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    drawSun();
+    drawMoon();
+    drawEarth();
+    drawBlackHole();
+
+    // ★ 星（右方向へ流す）
+    stars.forEach(s => {
+        s.x += 0.25;
+        if (s.x > canvas.width) {
+            s.x = 0;
+            s.y = Math.random() * canvas.height;
+        }
+
+        ctx.fillStyle = `rgba(255,255,255,${s.opacity})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // 流れ星
+    if (Math.random() < 0.01) spawnMeteor();
+
+    // 超新星
+    if (Math.random() < 0.0008) spawnSupernova();
+
+    // ブラックホール超新星
+    if (Math.random() < 0.0005) spawnBlackHoleSupernova();
+
+    drawSupernovas();
+
+    meteors.forEach(m => {
+        if (!m.paused) {
+            m.x -= m.speed;
+            m.y += m.speed * 0.12;
+        }
+
+        const grad = ctx.createLinearGradient(
+            m.x, m.y,
+            m.x + m.len, m.y - m.len * 0.1
+        );
+        grad.addColorStop(0, m.color);
+        grad.addColorStop(1, "rgba(200,247,255,0)");
+
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(m.x, m.y);
+        ctx.lineTo(m.x + m.len, m.y - m.len * 0.1);
+        ctx.stroke();
+
+        m.msgEl.style.left = (m.x + m.len * 0.45) + "px";
+        m.msgEl.style.top  = (m.y - m.len * 0.12) + "px";
+
+        if (m.x < -350) {
+            m.active = false;
+            m.msgEl.style.opacity = 0;
+            setTimeout(() => m.msgEl.remove(), 800);
+        }
+    });
+
+    meteors = meteors.filter(m => m.active);
+
+    requestAnimationFrame(draw);
+}
+
+window.addEventListener("resize", () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    stars = Array.from({length: starCount}, () => new Star());
+});
+window.dispatchEvent(new Event("resize"));
+
+draw();
+</script>
+
+</body>
+</html>
