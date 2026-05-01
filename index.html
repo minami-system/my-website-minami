@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meteor System - Balanced No Overlap Final</title>
+
+<style>
+    body { margin: 0; overflow: hidden; background: #000108; font-family: 'Hiragino Mincho ProN', serif; }
+    canvas { display: block; }
+
+    .meteor-msg {
+        position: fixed;
+        font-size: 2rem;
+        font-weight: 700;
+        letter-spacing: 0.3em;
+        pointer-events: none;
+        opacity: 0;
+        z-index: 10;
+        transition: opacity 1.0s ease;
+        white-space: nowrap;
+        text-shadow: 0 0 12px #000, 0 0 25px rgba(120,180,255,0.9);
+    }
+
+    .constellation-name {
+        position: fixed;
+        color: rgba(200,220,255,0.85);
+        font-size: 1.1rem;
+        pointer-events: none;
+        text-shadow: 0 0 10px #000;
+        z-index: 5;
+        opacity: 0;
+        transition: opacity 1.2s ease;
+    }
+</style>
+</head>
+<body>
+
+<canvas id="sky"></canvas>
+
+<script>
+const canvas = document.getElementById("sky");
+const ctx = canvas.getContext("2d");
+
+let stars = [], meteors = [], supernovas = [];
+let starCount = 200;
+
+// 星座名
+const constellationNames = [
+    "オリオン","カシオペア","アンドロメダ","ペガサス","こと座",
+    "はくちょう座","さそり座","おうし座","しし座"
+];
+let constellationLabels = [];
+
+// 流星群
+let meteorShower = false;
+let meteorShowerEnd = 0;
+
+// 流れ星の間隔
+let lastMeteorTime = 0;
+let meteorInterval = 1000;
+
+// 流れ星の色
+const meteorColors = [
+    "#c8f7ff","#ffd7f7","#fff2b0","#b0ffea","#e0b0ff",
+    "#ffb0b0","#b0ffb8","#b0c8ff","#ffe0ff","#e0ffe0"
+];
+
+// 星
+class Star {
+    constructor() { this.reset(); }
+    reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.size = Math.random() * 2.5 + 1.2;
+        this.opacity = Math.random() * 0.5 + 0.6;
+    }
+}
+
+// メッセージ
+function createMessageElement(text, big=false) {
+    const el = document.createElement("div");
+    el.className = "meteor-msg";
+    el.innerText = text;
+
+    const colors = ["#dff6ff","#ffd6f6","#ffe7b0","#c0ffea","#e0c0ff","#ffb0b0"];
+    el.style.color = colors[Math.floor(Math.random() * colors.length)];
+
+    if (big) el.style.fontSize = "3rem";
+
+    document.body.appendChild(el);
+    requestAnimationFrame(()=> el.style.opacity = 1);
+    return el;
+}
+
+// 星座ラベル配置
+function placeConstellationLabels() {
+    constellationLabels.forEach(el => el.remove());
+    constellationLabels = [];
+
+    const density = stars.map((s, i) => {
+        let near = 0;
+        for (let j = 0; j < stars.length; j++) {
+            if (i === j) continue;
+            const dx = s.x - stars[j].x;
+            const dy = s.y - stars[j].y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < 80) near++;
+        }
+        return { index: i, near };
+    });
+
+    density.sort((a, b) => a.near - b.near);
+
+    for (let k = 0; k < 6; k++) {
+        const starIndex = density[k].index;
+        const star = stars[starIndex];
+        const name = constellationNames[Math.floor(Math.random() * constellationNames.length)];
+
+        const el = document.createElement("div");
+        el.className = "constellation-name";
+        el.innerText = name;
+
+        el.style.left = (star.x + 20) + "px";
+        el.style.top  = (star.y - 10) + "px";
+        el._starIndex = starIndex;
+
+        document.body.appendChild(el);
+        constellationLabels.push(el);
+    }
+}
+
+// 星座ラベル透明度
+function updateConstellationNameOpacity() {
+    constellationLabels.forEach(label => {
+        const index = label._starIndex;
+        const star = stars[index];
+
+        let connections = 0;
+        for (let j = 0; j < stars.length; j++) {
+            if (j === index) continue;
+            const dx = stars[index].x - stars[j].x;
+            const dy = stars[index].y - stars[j].y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < 40) connections++;
+        }
+
+        const opacity = Math.min(1, connections / 5);
+        label.style.opacity = opacity.toFixed(2);
+
+        label.style.left = (star.x + 20) + "px";
+        label.style.top  = (star.y - 10) + "px";
+    });
+}
+
+// 線分同士の最短距離
+function segmentDistance(x1,y1,x2,y2, x3,y3,x4,y4) {
+    function dot(ax,ay,bx,by){ return ax*bx + ay*by; }
+
+    const A = {x:x2-x1, y:y2-y1};
+    const B = {x:x4-x3, y:y4-y3};
+    const C = {x:x1-x3, y:y1-y3};
+
+    const a = dot(A.x,A.y, A.x,A.y);
+    const b = dot(A.x,A.y, B.x,B.y);
+    const c = dot(B.x,B.y, B.x,B.y);
+    const d = dot(A.x,A.y, C.x,C.y);
+    const e = dot(B.x,B.y, C.x,C.y);
+
+    const D = a*c - b*b;
+    let sc, sN, sD = D;
+    let tc, tN, tD = D;
+
+    if (D < 1e-8) {
+        sN = 0;
+        sD = 1;
+        tN = e;
+        tD = c;
+    } else {
+        sN = (b*e - c*d);
+        tN = (a*e - b*d);
+
+        if (sN < 0) { sN = 0; tN = e; tD = c; }
+        else if (sN > sD) { sN = sD; tN = e + b; tD = c; }
+    }
+
+    if (tN < 0) {
+        tN = 0;
+        if (-d < 0) sN = 0;
+        else if (-d > a) sN = sD;
+        else { sN = -d; sD = a; }
+    } else if (tN > tD) {
+        tN = tD;
+        if ((-d + b) < 0) sN = 0;
+        else if ((-d + b) > a) sN = sD;
+        else { sN = (-d + b); sD = a; }
+    }
+
+    sc = (Math.abs(sN) < 1e-8 ? 0 : sN / sD);
+    tc = (Math.abs(tN) < 1e-8 ? 0 : tN / tD);
+
+    const dx = C.x + (A.x * sc) - (B.x * tc);
+    const dy = C.y + (A.y * sc) - (B.y * tc);
+
+    return Math.hypot(dx, dy);
+}
+
+// 重なりチェック
+function canSpawnMeteor(y, len) {
+    const x1 = canvas.width + 150;
+    const y1 = y;
+    const x2 = x1 + len;
+    const y2 = y - len * 0.1;
+
+    for (const m of meteors) {
+        const mx1 = m.x;
+        const my1 = m.y;
+        const mx2 = m.x + m.len;
+        const my2 = m.y - m.len * 0.1;
+
+        const d = segmentDistance(x1,y1,x2,y2, mx1,my1,mx2,my2);
+        if (d < 150) return false;
+    }
+    return true;
+}
+
+// 流れ星生成
+function spawnMeteor() {
+    const isMega = Math.random() < 0.15;
+    const spd = isMega ? (Math.random() * 3 + 2.5) : (Math.random() * 2 + 1.0);
+    const len = isMega ? (300 + spd * 150) : (220 + spd * 100);
+
+    let y = Math.random() * canvas.height * 0.7;
+
+    let tries = 0;
+    while (!canSpawnMeteor(y, len) && tries < 60) {
+        y = Math.random() * canvas.height * 0.7;
+        tries++;
+    }
+
+    const messages = [
+        "星のささやき","夜空の記憶","永遠の煌めき","静寂の深淵","光の残響",
+        "夢の残滓","銀河の呼吸","影のゆらめき","深海のような空","時の雫"
+    ];
+    const msg = messages[Math.floor(Math.random() * messages.length)];
+    const color = meteorColors[Math.floor(Math.random() * meteorColors.length)];
+    const size = isMega ? (Math.random() * 4 + 4) : (Math.random() * 2.5 + 1.5);
+
+    const msgEl = createMessageElement(msg, isMega);
+
+    meteors.push({
+        active: true,
+        x: canvas.width + 150,
+        y: y,
+        speed: spd,
+        len: len,
+        color: color,
+        size: size,
+        msgEl: msgEl,
+        paused: false
+    });
+}
+
+// 流星群
+function startMeteorShower() {
+    meteorShower = true;
+    meteorShowerEnd = performance.now() + 4000;
+}
+function updateMeteorShower() {
+    if (meteorShower && performance.now() > meteorShowerEnd) {
+        meteorShower = false;
+    }
+}
+
+// 生成ロジック（同時最大3本）
+function trySpawnMeteor() {
+    const now = performance.now();
+    updateMeteorShower();
+
+    const activeCount = meteors.length;
+
+    if (meteorShower) {
+        if (activeCount < 3 && Math.random() < 0.12) spawnMeteor();
+        return;
+    }
+
+    if (now - lastMeteorTime < meteorInterval) return;
+
+    if (Math.random() < 0.05) {
+        spawnMeteor();
+        lastMeteorTime = now;
+    }
+
+    if (Math.random() < 0.5) startMeteorShower();
+}
+
+// 超新星
+function spawnSupernova() {
+    supernovas.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height * 0.7,
+        radius: 0,
+        alpha: 1
+    });
+}
+function drawSupernovas() {
+    supernovas.forEach(s => {
+        s.radius += 2;
+        s.alpha -= 0.01;
+
+        const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.radius);
+        g.addColorStop(0, `rgba(255,240,200,${s.alpha})`);
+        g.addColorStop(1, `rgba(80,20,50,0)`);
+
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    supernovas = supernovas.filter(s => s.alpha > 0);
+}
+
+// 星座ライン
+function drawConstellations() {
+    const time = performance.now() * 0.001;
+    let lines = 0;
+    const maxLines = 250;
+
+    for (let i = 0; i < stars.length; i++) {
+        for (let j = i + 1; j < stars.length; j++) {
+
+            if (lines > maxLines) return;
+
+            const dx = stars[i].x - stars[j].x;
+            const dy = stars[i].y - stars[j].y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+
+            if (dist < 40) {
+                const alpha = 0.25 + Math.sin(time + dist * 0.05) * 0.15;
+
+                const grad = ctx.createLinearGradient(
+                    stars[i].x, stars[i].y,
+                    stars[j].x, stars[j].y
+                );
+                grad.addColorStop(0, `rgba(180,200,255,${alpha})`);
+                grad.addColorStop(1, `rgba(120,150,255,${alpha * 0.7})`);
+
+                ctx.strokeStyle = grad;
+                ctx.lineWidth = 0.6 + Math.sin(time * 2 + dist * 0.1) * 0.3;
+
+                ctx.beginPath();
+                ctx.moveTo(stars[i].x, stars[i].y);
+                ctx.lineTo(stars[j].x, stars[j].y);
+                ctx.stroke();
+
+                lines++;
+            }
+        }
+    }
+}
+
+// 流れ星描画
+function drawStraightMeteor(m) {
+    const grad = ctx.createLinearGradient(
+        m.x, m.y,
+        m.x + m.len, m.y - m.len * 0.1
+    );
+    grad.addColorStop(0, m.color);
+    grad.addColorStop(1, "rgba(200,247,255,0)");
+
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = m.size;
+    ctx.beginPath();
+    ctx.moveTo(m.x, m.y);
+    ctx.lineTo(m.x + m.len, m.y - m.len * 0.1);
+    ctx.stroke();
+}
+
+// 星更新
+function updateStars() {
+    stars.forEach(s => {
+        s.x += 0.25;
+        if (s.x > canvas.width) {
+            s.reset();
+            s.x = 0;
+        }
+
+        ctx.fillStyle = `rgba(255,255,255,${s.opacity})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+// 太陽
+function drawSun() {
+    const x = canvas.width - 150;
+    const y = 150;
+
+    const t = performance.now() * 0.001;
+    const scale = 1.2 + Math.sin(t * 1.5) * 0.15;
+    const radius = 120 * scale;
+
+    const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    g.addColorStop(0, "rgba(255,240,180,1)");
+    g.addColorStop(0.4, "rgba(255,200,120,0.7)");
+    g.addColorStop(1, "rgba(255,160,80,0)");
+
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// 地球
+function drawEarth() {
+    const x = 180;
+    const y = canvas.height - 180;
+
+    const t = performance.now() * 0.001;
+    const scale = 1.2 + Math.sin(t) * 0.1;
+
+    const radius = 120 * scale;
+
+    const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    g.addColorStop(0, "rgba(80,150,255,0.9)");
+    g.addColorStop(0.5, "rgba(80,150,255,0.4)");
+    g.addColorStop(1, "rgba(80,150,255,0)");
+
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// メインループ
+function draw() {
+    ctx.fillStyle = "#000108";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    drawSun();
+    drawEarth();
+    updateStars();
+    drawConstellations();
+    updateConstellationNameOpacity();
+
+    trySpawnMeteor();
+
+    if (Math.random() < 0.0008) spawnSupernova();
+    drawSupernovas();
+
+    meteors.forEach(m => {
+        if (!m.paused) {
+            m.x -= m.speed;
+            m.y += m.speed * 0.12;
+        }
+
+        drawStraightMeteor(m);
+
+        m.msgEl.style.left = (m.x + m.len * 0.45) + "px";
+        m.msgEl.style.top  = (m.y - m.len * 0.12) + "px";
+
+        if (m.x < -350) {
+            m.active = false;
+            m.msgEl.style.opacity = 0;
+            setTimeout(() => m.msgEl.remove(), 1000);
+        }
+    });
+
+    meteors = meteors.filter(m => m.active);
+
+    requestAnimationFrame(draw);
+}
+
+// 点と線分の距離（クリック判定用）
+function pointToLineDistance(px, py, x1, y1, x2, y2) {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = lenSq !== 0 ? dot / lenSq : -1;
+
+    if (param < 0) param = 0;
+    else if (param > 1) param = 1;
+
+    const xx = x1 + param * C;
+    const yy = y1 + param * D;
+
+    const dx = px - xx;
+    const dy = py - yy;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// クリックで一時停止
+canvas.addEventListener("click", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    meteors.forEach(m => {
+        const x1 = m.x;
+        const y1 = m.y;
+        const x2 = m.x + m.len;
+        const y2 = m.y - m.len * 0.1;
+
+        const dist = pointToLineDistance(clickX, clickY, x1, y1, x2, y2);
+
+        if (dist < 25 && !m.paused) {
+            m.paused = true;
+            m._oldSpeed = m.speed;
+            m.speed = 0;
+
+            setTimeout(() => {
+                m.speed = m._oldSpeed;
+                m.paused = false;
+            }, 5000);
+        }
+    });
+});
+
+// リサイズ
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    stars = [];
+    for (let i = 0; i < starCount; i++) {
+        stars.push(new Star());
+    }
+    placeConstellationLabels();
+}
+
+window.addEventListener("resize", resize);
+
+// 初期化
+resize();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
