@@ -937,9 +937,10 @@ function getNextMessage(messages) {
     const msg = getNextMessage(messages);
     const color = meteorColors[Math.floor(Math.random() * meteorColors.length)];
     const size = isMega ? (Math.random() * 4 + 4) : (Math.random() * 2.5 + 1.5);
-
+　　
     const msgEl = createMessageElement(msg, isMega);
-
+　　console.log(msg);
+    
     meteors.push({
         active: true,
         x: canvas.width + 150,
