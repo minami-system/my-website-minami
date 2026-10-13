@@ -889,6 +889,30 @@ function spawnMeteor() {
 "焼肉が美味しかった",
 "system公認キャラクター_ネ・コダス",
     ];
+
+let messagePool = [];
+
+function getNextMessage(messages) {
+
+    if (messagePool.length === 0) {
+
+        messagePool = [...messages];
+
+        // シャッフル
+        for (let i = messagePool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+
+            [messagePool[i], messagePool[j]] =
+            [messagePool[j], messagePool[i]];
+        }
+    }
+
+    return messagePool.pop();
+}
+
+    
+
+    
     const msg = messages[Math.floor(Math.random() * messages.length)];
     const color = meteorColors[Math.floor(Math.random() * meteorColors.length)];
     const size = isMega ? (Math.random() * 4 + 4) : (Math.random() * 2.5 + 1.5);
