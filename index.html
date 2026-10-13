@@ -933,7 +933,7 @@ function trySpawnMeteor() {
 
     if (now - lastMeteorTime < meteorInterval) return;
 
-    if (Math.random() < 0.25) {
+    if (Math.random() < 0.5) {
         spawnMeteor();
         lastMeteorTime = now;
     }
