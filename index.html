@@ -44,7 +44,8 @@ const ctx = canvas.getContext("2d");
 
 let stars = [], meteors = [], supernovas = [];
 let starCount = 200;
-
+let messagePool = [];
+    
 // 星座名
 const constellationNames = [
     "オリオン","カシオペア","アンドロメダ","ペガサス","こと座",
@@ -225,6 +226,25 @@ function canSpawnMeteor(y, len) {
 }
 
 // 流れ星生成
+
+function getNextMessage(messages) {
+
+    if (messagePool.length === 0) {
+
+        messagePool = [...messages];
+
+        for (let i = messagePool.length - 1; i > 0; i--) {
+
+            const j = Math.floor(Math.random() * (i + 1));
+
+            [messagePool[i], messagePool[j]] =
+            [messagePool[j], messagePool[i]];
+        }
+    }
+
+    return messagePool.pop();
+}
+    
 function spawnMeteor() {
     const isMega = Math.random() < 0.15;
     const spd = isMega ? (Math.random() * 3 + 2.5) : (Math.random() * 2 + 1.0);
