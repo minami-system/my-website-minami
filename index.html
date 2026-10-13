@@ -913,7 +913,8 @@ function getNextMessage(messages) {
     
 
     
-    const msg = messages[Math.floor(Math.random() * messages.length)];
+    // const msg = messages[Math.floor(Math.random() * messages.length)];
+    const msg = getNextMessage(messages);
     const color = meteorColors[Math.floor(Math.random() * meteorColors.length)];
     const size = isMega ? (Math.random() * 4 + 4) : (Math.random() * 2.5 + 1.5);
 
